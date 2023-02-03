@@ -16,7 +16,9 @@
 #include <fstream>
 #include <sstream>
 #include <vector>
+#include <iostream>
 
 #include "jsoncpp.hpp"
+#include <windows.h>
 
 #endif //PCH_H

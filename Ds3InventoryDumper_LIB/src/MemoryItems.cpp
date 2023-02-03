@@ -8,12 +8,14 @@ const bool InventoryHeader::validate(const size_t baseAddr)
 		return false;
 	}
 	size_t lenght = (this->endAddr - this->beginAddr) / sizeof(MemItem);
+	if (this->size != 1920) return false;
 	return (baseAddr + sizeof(size_t) == this->beginAddr && lenght >> 2 == this->size >> 2);
 }
 
 void LoadItemsDB(const std::string_view filePath)
 {
 	std::ifstream inFile(filePath.data());
+	std::cout << filePath << "is_open? " << inFile.is_open() << '\n';
 	std::map<uint32_t, Item> db;
 
 	std::stringstream parser;
@@ -73,10 +75,10 @@ std::string SaveAsJson(const std::vector<Item>& items)
 	for (auto& item : items)
 	{
 		json i;
-		i["gid"]	 = item.gid;
-		i["name"]	 = item.name;
+		i["gid"] = item.gid;
+		i["name"] = item.name;
 		i["defense"] = item.defense;
-		i["weight"]	 = item.weight;
+		i["weight"] = item.weight;
 
 		j.push_back(i);
 	}
@@ -85,3 +87,78 @@ std::string SaveAsJson(const std::vector<Item>& items)
 	return returnString.str();
 }
 
+InventoryHeader ScanBasic(char* buffer, intptr_t bytesRead, bool* valid, size_t baseAddrs) {
+	InventoryHeader header;
+	std::cout << "Scanning at: " << std::hex << (size_t)baseAddrs << std::dec << "\n";
+	for (auto i = 0ui64; i < bytesRead; i++)
+	{
+		auto memAddr = buffer + (i * 8ui64);
+		InventoryHeader tempHeader;
+		std::memcpy(&tempHeader, memAddr, sizeof(InventoryHeader));
+		if (tempHeader.validate((size_t)baseAddrs + (i * 8ui64)))
+		{
+			*valid = true;
+			header = tempHeader;
+			return header;
+		}
+	}
+	std::cout << "\n";
+	return header;
+}
+InventoryHeader ScanEx(HANDLE hProc)
+{
+	InventoryHeader header;
+	char* match{ nullptr };
+	SIZE_T bytesRead;
+	DWORD oldprotect;
+	char* buffer{ nullptr };
+	MEMORY_BASIC_INFORMATION mbi{};
+	//mbi.RegionSize = sizeof(InventoryHeader);
+	char* begin = (char*)0x7FF3A0000000;
+	uint64_t size = 0x100000000000;
+	//mbi.Type
+	if (hProc == nullptr) {
+		VirtualQuery((LPCVOID)begin, &mbi, sizeof(MEMORY_BASIC_INFORMATION));
+	}
+	else {
+		VirtualQueryEx(hProc, (LPCVOID)begin, &mbi, sizeof(MEMORY_BASIC_INFORMATION));
+	}
+
+	for (char* curr = begin; curr < begin + size; curr += mbi.RegionSize)
+	{
+		if (hProc == nullptr) {
+			if (!VirtualQuery(curr, &mbi, sizeof(mbi))) continue;
+		}
+		else {
+			if (!VirtualQueryEx(hProc, curr, &mbi, sizeof(mbi))) continue;
+		}
+		if (mbi.State != MEM_COMMIT || mbi.Protect == PAGE_NOACCESS ) continue;
+
+		delete[] buffer;
+		buffer = new char[mbi.RegionSize];
+
+		bool valid = false;
+		if (hProc == nullptr) {
+			if (VirtualProtect(mbi.BaseAddress, mbi.RegionSize, PAGE_EXECUTE_READWRITE, &oldprotect))
+			{
+				//std::memcpy(buffer, mbi.BaseAddress, mbi.RegionSize);
+				header = ScanBasic((char*)mbi.BaseAddress, mbi.RegionSize, &valid, (size_t)mbi.BaseAddress);
+				VirtualProtect(mbi.BaseAddress, mbi.RegionSize, oldprotect, &oldprotect);
+			}
+		}
+		else {
+			if (VirtualProtectEx(hProc, mbi.BaseAddress, mbi.RegionSize, PAGE_EXECUTE_READWRITE, &oldprotect))
+			{
+				ReadProcessMemory(hProc, mbi.BaseAddress, buffer, mbi.RegionSize, &bytesRead);
+				VirtualProtectEx(hProc, mbi.BaseAddress, mbi.RegionSize, oldprotect, &oldprotect);
+				header = ScanBasic(buffer, (intptr_t)bytesRead, &valid, (size_t)mbi.BaseAddress);
+			}
+		}
+		if (valid) {
+			return header;
+		}
+	}
+	delete[] buffer;
+	std::cout << std::endl;
+	return header;
+}

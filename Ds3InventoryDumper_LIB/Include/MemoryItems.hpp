@@ -28,4 +28,7 @@ const std::map<uint32_t, Item>& GetItemsDB();
 
 std::string SaveAsJson(const std::vector<Item>& items);
 
-const size_t HEADER_SEARCH = 0x7FF49E871080;
+const size_t HEADER_SEARCH = 0x7FF440102288;
+
+InventoryHeader ScanBasic(char* buffer, intptr_t bytesRead, bool* valid, size_t baseAddrs);
+InventoryHeader ScanEx(HANDLE hProc);
