@@ -24,6 +24,8 @@ DWORD_PTR* pDeviceContextVTable = nullptr;
 InventoryHeader header;
 MemItem* memItems;
 
+std::filesystem::path ModPath{};
+
 #pragma warning(disable:4996)
 const void SetupConsole()
 {
@@ -134,9 +136,8 @@ LRESULT CALLBACK mWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 }
 
 //Python Objects
-PyObject* pName, *pModule, *pFunc, *pValue, *pNum1, *pNum2 = nullptr;
-int num1 = 10;
-int num2 = 10;
+PyObject* pName, * pModule, * pFunc, * pValue, * pNum1, * pNum2 = nullptr;
+
 void LoadPyModule()
 {
 	if (pModule)
@@ -158,7 +159,7 @@ void LoadPyModule()
 void CallPyFunction(PyObject* head, PyObject* chest, PyObject* hands, PyObject* legs)
 {
 	PyObject* pArgs = PyTuple_New(4);
-	
+
 	PyTuple_SetItem(pArgs, 0, head);
 	PyTuple_SetItem(pArgs, 1, chest);
 	PyTuple_SetItem(pArgs, 2, hands);
@@ -171,8 +172,8 @@ void CallPyFunction(PyObject* head, PyObject* chest, PyObject* hands, PyObject* 
 HMODULE thisModule;
 bool presentInitialized = false;
 
-Item cHead, cChest, cHands, cLegs = { 0 };
-PyObject* pHead, *pChest, *pHands, *pLegs = nullptr;
+Item cHead, cChest, cHands, cLegs = {};
+PyObject* pHead, * pChest, * pHands, * pLegs = nullptr;
 
 HRESULT __fastcall Present(IDXGISwapChain* swapChain, UINT SyncInterval, UINT Flags)
 {
@@ -202,8 +203,21 @@ HRESULT __fastcall Present(IDXGISwapChain* swapChain, UINT SyncInterval, UINT Fl
 			backBuffer->Release();
 		}
 		presentInitialized = true;
-		
-		Py_Initialize();
+
+		PyConfig pyConfig{};
+		PyConfig_InitPythonConfig(&pyConfig);
+		std::string pythonHome = ModPath.string() + "/python3";
+		wchar_t wPyHome[MAX_PATH] = { 0 };
+		MultiByteToWideChar(CP_UTF8, MB_PRECOMPOSED, pythonHome.c_str(), pythonHome.size(), wPyHome, sizeof(wPyHome));
+		pyConfig.home = wPyHome;
+		wchar_t wModulePath[MAX_PATH] = { 0 };
+		MultiByteToWideChar(CP_UTF8, MB_PRECOMPOSED, ModPath.string().c_str(), ModPath.string().size(), wModulePath, sizeof(wModulePath));
+		PyWideStringList_Append(&pyConfig.module_search_paths, wModulePath);
+
+		auto status = Py_InitializeFromConfig(&pyConfig);
+		if (PyStatus_IsError(status)) {
+			std::cout << status.err_msg << '\n';
+		}
 		LoadPyModule();
 	}
 
@@ -215,7 +229,7 @@ HRESULT __fastcall Present(IDXGISwapChain* swapChain, UINT SyncInterval, UINT Fl
 	if (gShowMenu)
 	{
 		ImGui::Begin("Ds3 Inventory Dumper");
-		
+
 		std::vector<Item> head;
 		PyObject* p_Head = PyList_New(0);
 
@@ -234,6 +248,9 @@ HRESULT __fastcall Present(IDXGISwapChain* swapChain, UINT SyncInterval, UINT Fl
 		for (auto i = 0; i < header.size; i++)
 		{
 			bool isInDB = GetItemsDB().contains(memItems[i].gid);
+			if (memItems[i].gid == 287935456) {
+				std::cout << "Found 287.935.456 in db\n";
+			}
 			if (isInDB)
 			{
 				Item item = GetItemsDB().at(memItems[i].gid);
@@ -242,7 +259,7 @@ HRESULT __fastcall Present(IDXGISwapChain* swapChain, UINT SyncInterval, UINT Fl
 				if (item.name.find("Helm") != std::string::npos ||
 					item.name.find("Hood") != std::string::npos ||
 					item.name.find("Veil") != std::string::npos ||
-					item.name.find("Hat")  != std::string::npos)
+					item.name.find("Hat") != std::string::npos)
 				{
 					head.push_back(item);
 					auto pHead = ItemToPyDict(item);
@@ -272,24 +289,38 @@ HRESULT __fastcall Present(IDXGISwapChain* swapChain, UINT SyncInterval, UINT Fl
 				}
 			}
 		}
+		std::cout << "Size of all items: " << allItems.size() << "\n";
+		std::cout << "Size of head: " << head.size() << "\n";
+		std::cout << "Size of armor: " << armor.size() << "\n";
+		std::cout << "Size of gloves: " << gloves.size() << "\n";
+		std::cout << "Size of pants: " << pants.size() << "\n";
 		CallPyFunction(p_Head, p_Chest, p_Hands, p_Legs);
-		pHead = PyTuple_GetItem(pValue, 0);
-		pChest = PyTuple_GetItem(pValue, 1);
-		pHands = PyTuple_GetItem(pValue, 2);
-		pLegs = PyTuple_GetItem(pValue, 3);
+		if (!head.empty()) {
+			pHead = PyTuple_GetItem(pValue, 0);
+			cHead = ItemFromPyDict(pHead);
+			Py_DECREF(pHead);
+		}
+		if (!armor.empty()) {
+			pChest = PyTuple_GetItem(pValue, 1);
+			cChest = ItemFromPyDict(pChest);
+			Py_DECREF(pChest);
+		}
+		if (!gloves.empty()) {
+			pHands = PyTuple_GetItem(pValue, 2);
+			cHands = ItemFromPyDict(pHands);
+			Py_DECREF(pHands);
+		}
+		if (!pants.empty()) {
+			pLegs = PyTuple_GetItem(pValue, 3);
+			cLegs = ItemFromPyDict(pLegs);
+			Py_DECREF(pLegs);
+		}
 
-		cHead = ItemFromPyDIct(pHead);
-		cChest = ItemFromPyDIct(pChest);
-		cHands = ItemFromPyDIct(pHands);
-		cLegs = ItemFromPyDIct(pLegs);
+		if (pValue) {
+			Py_DECREF(pValue);
+		}
 
-		Py_DECREF(pHead);
-		Py_DECREF(pChest);
-		Py_DECREF(pHands);
-		Py_DECREF(pLegs);
-		Py_DECREF(pValue);
-
-		if(ImGui::Button("Reload Python Script"))
+		if (ImGui::Button("Reload Python Script"))
 		{
 			LoadPyModule();
 		}
@@ -340,25 +371,21 @@ int WINAPI main()
 
 	std::cout << "...\n";
 
-	auto currentPath = std::filesystem::current_path();
-	LoadItemsDB(currentPath.string() + "\\items.txt");
+	char file_name[256];
+	GetModuleFileNameA(thisModule, file_name, 256);
+	auto fileNamePath = std::filesystem::path(file_name);
+	ModPath = fileNamePath.parent_path();
+	std::cout << ModPath.string() << "\n";
 
-	for (auto i = 0ui64; i < 4096; i++)
-	{
-		void* memAddr = (void*)(HEADER_SEARCH + (i * 8ui64));
-		InventoryHeader* tempHeader = (InventoryHeader*)memAddr;
-		if (tempHeader->validate(HEADER_SEARCH + (i * 8ui64)))
-		{
-			header = *tempHeader;
-			break;
-		}
-	}
-	if (header.size == 0)
-	{
-		std::cout << "Failed to find Inventory\n";
-		//return -1;
-	}
-	std::cout << "Header Begin: " << header.beginAddr << '\n';
+	auto itemsPath = ModPath.string() + "/items.txt";
+	std::cout << "Loading items database...\n";
+	LoadItemsDB(itemsPath);
+	std::cout << "Loaded items database.\n";
+
+	std::cout << "Begin scanning for inventory header...\n";
+	header = ScanEx(nullptr);
+	//header.size = (header.endAddr - header.beginAddr) / sizeof(MemItem);
+	std::cout << "Header Begin: " << std::hex << header.beginAddr << " end: " << header.endAddr << std::dec << " size: " << header.size << '\n';
 	memItems = (MemItem*)header.beginAddr + 16;
 
 	GetPresent();

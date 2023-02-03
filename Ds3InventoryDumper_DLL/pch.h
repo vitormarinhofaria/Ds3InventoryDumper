@@ -15,6 +15,7 @@
 #include <vector>
 #include <string>
 #include <filesystem>
+#include <fstream>
 
 #include <d3d11.h>
 
@@ -23,7 +24,6 @@
 #include <imgui.h>
 #include <imgui_impl_win32.h>
 #include <imgui_impl_dx11.h>
-
-#include <Python.h>
+#include <python3.10/Python.h>
 
 #endif //PCH_H

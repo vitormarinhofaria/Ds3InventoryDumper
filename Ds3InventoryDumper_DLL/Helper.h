@@ -6,7 +6,7 @@
 PyObject* ItemToPyDict(const Item& item)
 {
 	PyObject* dict = PyDict_New();
-
+	
 	PyObject* name = PyUnicode_FromString(item.name.c_str());
 	PyDict_SetItemString(dict, "name", name);
 	Py_DECREF(name);
@@ -22,11 +22,11 @@ PyObject* ItemToPyDict(const Item& item)
 	return dict;
 }
 
-Item ItemFromPyDIct(PyObject* pItem)
+Item ItemFromPyDict(PyObject* pItem)
 {
 	auto pName = PyDict_GetItemString(pItem, "name");
-	auto pWeight = PyDict_GetItemString(pItem, "weight");
 	auto pDefense = PyDict_GetItemString(pItem, "defense");
+	auto pWeight = PyDict_GetItemString(pItem, "weight");
 	
 	std::string name = PyUnicode_AsUTF8(pName);
 	float defense = PyFloat_AsDouble(pDefense);
