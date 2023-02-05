@@ -25,6 +25,7 @@ InventoryHeader header;
 MemItem* memItems;
 
 std::filesystem::path ModPath{};
+std::thread g_python_thread;
 
 #pragma warning(disable:4996)
 const void SetupConsole()
@@ -44,7 +45,7 @@ const void GetPresent()
 	WNDCLASSEXA wc = { sizeof(WNDCLASSEX), CS_CLASSDC, DXGIMsgProc, 0, 0, GetModuleHandleA(NULL), nullptr, nullptr, nullptr, nullptr, "DX", nullptr };
 	RegisterClassExA(&wc);
 	HWND hwnd = CreateWindowA("DX", nullptr, WS_OVERLAPPEDWINDOW, 100, 100, 300, 300, nullptr, nullptr, wc.hInstance, nullptr);
-	
+
 	DXGI_SWAP_CHAIN_DESC sd = { 0 };
 	sd.BufferCount = 1;
 	sd.BufferDesc.Width = 2;
@@ -127,7 +128,6 @@ void CheckImGuiConfig() {
 }
 
 static bool gShowMenu = false;
-void LoadPyModule(); //Foward declaration
 int hotKeyId = 857;
 LRESULT CALLBACK mWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 {
@@ -135,8 +135,8 @@ LRESULT CALLBACK mWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 	POINT mPos;
 	GetCursorPos(&mPos);
 	ScreenToClient(window, &mPos);
-	ImGui::GetIO().MousePos.x = mPos.x;
-	ImGui::GetIO().MousePos.y = mPos.y;
+	ImGui::GetIO().MousePos.x = static_cast<float>(mPos.x);
+	ImGui::GetIO().MousePos.y = static_cast<float>(mPos.y);
 
 	if (msg == WM_KEYUP)
 	{
@@ -147,7 +147,7 @@ LRESULT CALLBACK mWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 	}
 	if (msg == WM_HOTKEY) {
 		if (wparam == hotKeyId) {
-			LoadPyModule();
+			SetShouldReloadPython(true);
 		}
 	}
 
@@ -159,49 +159,11 @@ LRESULT CALLBACK mWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 	return CallWindowProc(OriginalWindowProcHandler, hwnd, msg, wparam, lparam);
 }
 
-//Python Objects
-PyObject* pName, * pModule, * pFunc, * pValue, * pNum1, * pNum2 = nullptr;
-
-void LoadPyModule()
-{
-	if (pModule)
-	{
-		PyImport_ReloadModule(pModule);
-	}
-	else
-	{
-		pName = PyUnicode_FromString("myds3code");
-		pModule = PyImport_Import(pName);
-		Py_DECREF(pName);
-	}
-
-	if (pModule != nullptr)
-	{
-		pFunc = PyObject_GetAttrString(pModule, "calcular");
-		std::cout << __FUNCTION__ << ":" << __LINE__ << " Loaded calcular from myds3code.py\n";
-	}
-}
-void CallPyFunction(PyObject* head, PyObject* chest, PyObject* hands, PyObject* legs)
-{
-	PyObject* pArgs = PyTuple_New(4);
-
-	PyTuple_SetItem(pArgs, 0, head);
-	PyTuple_SetItem(pArgs, 1, chest);
-	PyTuple_SetItem(pArgs, 2, hands);
-	PyTuple_SetItem(pArgs, 3, legs);
-
-	pValue = PyObject_CallObject(pFunc, pArgs);
-	Py_DECREF(pArgs);
-}
-
 HMODULE thisModule;
 bool presentInitialized = false;
-
-Item cHead, cChest, cHands, cLegs = {};
-PyObject* pHead, * pChest, * pHands, * pLegs = nullptr;
-std::vector<Item> head, chest, hands, legs;
-
-std::string pythonCode;
+Item cHead, cChest, cHands, cLegs = { .gid = 0, .name = "N/A", .defense = 0, .weight = 0 };
+std::vector<Item>* head, * chest, * hands, * legs = nullptr;
+PyData g_Python;
 
 HRESULT __fastcall Present(IDXGISwapChain* swapChain, UINT SyncInterval, UINT Flags)
 {
@@ -233,38 +195,34 @@ HRESULT __fastcall Present(IDXGISwapChain* swapChain, UINT SyncInterval, UINT Fl
 		}
 		presentInitialized = true;
 		std::cout << __FUNCTION__ << ":" << __LINE__ << " pSwapChain: " << std::hex << pSwapChain << " window: " << window << "\n" << std::dec;
+		
+		head = new std::vector<Item>();
+		chest = new std::vector<Item>();
+		hands = new std::vector<Item>();
+		legs = new std::vector<Item>();
 
-		PyPreConfig preConfig{};
-		PyPreConfig_InitPythonConfig(&preConfig);
-		Py_PreInitialize(&preConfig);
+		InitPythonData initData{};
+		initData.head = &cHead;
+		initData.chest = &cChest;
+		initData.gloves = &cHands;
+		initData.legs = &cLegs;
+		initData.head_vec = head;
+		initData.chest_vec = chest;
+		initData.gloves_vec = hands;
+		initData.legs_vec = legs;
+		initData.module_path = ModPath.string();
 
-		PyConfig pyConfig{};
-		PyConfig_InitPythonConfig(&pyConfig);
-
-		std::string pythonHome = ModPath.string() + "/python3";
-		wchar_t wPyHome[MAX_PATH] = { 0 };
-		MultiByteToWideChar(CP_UTF8, MB_PRECOMPOSED, pythonHome.c_str(), pythonHome.size(), wPyHome, sizeof(wPyHome));
-		pyConfig.home = wPyHome;
-		PyWideStringList_Append(&pyConfig.module_search_paths, wPyHome);
-
-		wchar_t wModulePath[MAX_PATH] = { 0 };
-		MultiByteToWideChar(CP_UTF8, MB_PRECOMPOSED, ModPath.string().c_str(), ModPath.string().size(), wModulePath, sizeof(wModulePath));
-		PyWideStringList_Append(&pyConfig.module_search_paths, wModulePath);
-
-		std::wstring wLibsPath = std::wstring(wPyHome) + L"/Lib";
-		PyWideStringList_Append(&pyConfig.module_search_paths, wLibsPath.data());
-		pyConfig.module_search_paths_set = 1;
-
-		pyConfig.optimization_level = 2;
-
-		auto status = Py_InitializeFromConfig(&pyConfig);
-		if (PyStatus_IsError(status)) {
-			std::cout << status.err_msg << '\n';
+		g_Python.InitPython(initData);
+		/*g_python_thread = std::thread(
+			[initData]() {
+				using namespace std::chrono_literals;
+		std::this_thread::sleep_for(2s);
+		while (true) {
+			TickPython();
+			std::this_thread::sleep_for(200ms);
 		}
-		else {
-			std::cout << __FUNCTION__ << ":" << __LINE__ << " Python Initialized\n";
-		}
-		LoadPyModule();
+			});*/
+
 		RegisterHotKey(window, hotKeyId, MOD_SHIFT | MOD_CONTROL | MOD_NOREPEAT, VK_F11);
 	}
 
@@ -278,20 +236,12 @@ HRESULT __fastcall Present(IDXGISwapChain* swapChain, UINT SyncInterval, UINT Fl
 		std::wstring s = L"FPS: " + std::to_wstring(ImGui::GetIO().Framerate);
 		SetConsoleTitleW(s.c_str());
 
-		head.clear();
-		PyObject* p_Head = PyList_New(0);
-
-		chest.clear();
-		PyObject* p_Chest = PyList_New(0);
-
-		hands.clear();
-		PyObject* p_Hands = PyList_New(0);
-
-		legs.clear();
-		PyObject* p_Legs = PyList_New(0);
+		head->clear();
+		chest->clear();
+		hands->clear();
+		legs->clear();
 
 		std::vector<Item> allItems;
-		PyObject* p_All = PyList_New(0);
 
 		for (auto i = 0; i < header.size; i++)
 		{
@@ -300,94 +250,40 @@ HRESULT __fastcall Present(IDXGISwapChain* swapChain, UINT SyncInterval, UINT Fl
 			{
 				Item item = GetItemsDB().at(memItems[i].gid);
 				allItems.push_back(item);
+				std::string item_name = item.name;
 
-				if (item.name.find("Helm") != std::string::npos ||
-					item.name.find("Hood") != std::string::npos ||
-					item.name.find("Veil") != std::string::npos ||
-					item.name.find("Hat") != std::string::npos)
+				if (item_name.find("Helm") != std::string::npos ||
+					item_name.find("Hood") != std::string::npos ||
+					item_name.find("Veil") != std::string::npos ||
+					item_name.find("Hat") != std::string::npos)
 				{
-					head.push_back(item);
-					auto pHead = ItemToPyDict(item);
-					PyList_Insert(p_Head, 1, pHead);
-					Py_DECREF(pHead);
+					head->push_back(item);
 				}
-				if (item.name.find("Armor") != std::string::npos || item.name.find("Robe") != std::string::npos)
+				if (item_name.find("Armor") != std::string::npos || item_name.find("Robe") != std::string::npos)
 				{
-					chest.push_back(item);
-					auto pItem = ItemToPyDict(item);
-					PyList_Insert(p_Chest, 1, pItem);
-					Py_DECREF(pItem);
+					chest->push_back(item);
 				}
-				if (item.name.find("Gauntlet") != std::string::npos || item.name.find("Glove") != std::string::npos)
+				if (item_name.find("Gauntlet") != std::string::npos || item_name.find("Glove") != std::string::npos)
 				{
-					hands.push_back(item);
-					auto pItem = ItemToPyDict(item);
-					PyList_Insert(p_Hands, 1, pItem);
-					Py_DECREF(pItem);
+					hands->push_back(item);
 				}
-				if (item.name.find("Trouser") != std::string::npos || item.name.find("Legging") != std::string::npos)
+				if (item_name.find("Trouser") != std::string::npos || item_name.find("Legging") != std::string::npos)
 				{
-					legs.push_back(item);
-					auto pItem = ItemToPyDict(item);
-					PyList_Insert(p_Legs, 1, pItem);
-					Py_DECREF(pItem);
+					legs->push_back(item);
 				}
 			}
 		}
-
-		CallPyFunction(p_Head, p_Chest, p_Hands, p_Legs);
-		Py_DECREF(p_Head);
-		Py_DECREF(p_Chest);
-		Py_DECREF(p_Hands);
-		Py_DECREF(p_Legs);
-		if (!head.empty()) {
-			pHead = PyTuple_GetItem(pValue, 0);
-			cHead = ItemFromPyDict(pHead);
-			Py_DECREF(pHead);
-		}
-		if (!chest.empty()) {
-			pChest = PyTuple_GetItem(pValue, 1);
-			cChest = ItemFromPyDict(pChest);
-			Py_DECREF(pChest);
-		}
-		if (!hands.empty()) {
-			pHands = PyTuple_GetItem(pValue, 2);
-			cHands = ItemFromPyDict(pHands);
-			Py_DECREF(pHands);
-		}
-		if (!legs.empty()) {
-			pLegs = PyTuple_GetItem(pValue, 3);
-			cLegs = ItemFromPyDict(pLegs);
-			Py_DECREF(pLegs);
-		}
-
-		if (pValue) {
-			Py_DECREF(pValue);
-		}
-
+		g_Python.Update();
 		ImGui::Text("Press CTRL+SHIFT+F11 to reload the Python script");
 
 		ImGui::Text("Size of allItems %d", allItems.size());
-
-		if (!cHead.name.empty())
-		{
-			ImGui::Text("Head:   %s %.1f %.1f", cHead.name.c_str(), cHead.defense, cHead.weight);
-		}
-
-		if (!cChest.name.empty())
-		{
-			ImGui::Text("Armor:  %s %.1f %.1f", cChest.name.c_str(), cChest.defense, cChest.weight);
-		}
-
-		if (!cHands.name.empty())
-		{
-			ImGui::Text("Gloves: %s %.1f %.1f", cHands.name.c_str(), cHands.defense, cHands.weight);
-		}
-
-		if (!cLegs.name.empty())
-		{
-			ImGui::Text("Pants:  %s %.1f %.1f", cLegs.name.c_str(), cLegs.defense, cLegs.weight);
-		}
+		//if (get_py_mutex().try_lock_shared()) {
+		ImGui::Text("Head:   %s %.1f %.1f", cHead.name, cHead.defense, cHead.weight);
+		ImGui::Text("Armor:  %s %.1f %.1f", cChest.name, cChest.defense, cChest.weight);
+		ImGui::Text("Gloves: %s %.1f %.1f", cHands.name, cHands.defense, cHands.weight);
+		ImGui::Text("Pants:  %s %.1f %.1f", cLegs.name, cLegs.defense, cLegs.weight);
+		//get_py_mutex().unlock_shared();
+	//}
 
 		ImGui::End();
 	}
@@ -438,7 +334,7 @@ int WINAPI main()
 		Sleep(500);
 	}
 	std::cout << "Finished hooking DirectX\n";
-	std::cout << "You can now go back to the game and press 'Insert' to toogle the overlay\n";
+	std::cout << "You can now go back to the game and press 'Insert' to toogle the overlay.\n";
 	Sleep(4000);
 	return 0;
 }

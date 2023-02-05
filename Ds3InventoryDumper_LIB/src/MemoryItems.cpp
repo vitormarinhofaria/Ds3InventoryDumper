@@ -40,7 +40,8 @@ void LoadItemsDB(const std::string_view filePath)
 		parser >> item.gid;
 		parser.clear();
 
-		item.name = splits[1];
+		//item.name = splits[1];
+		strcpy_s(item.name, splits[1].c_str());
 
 		if (splits.size() > 2)
 		{
@@ -159,3 +160,5 @@ InventoryHeader ScanEx(HANDLE hProc)
 	std::cout << std::endl;
 	return header;
 }
+
+size_t DefaultInventorySize() { return InventorySize; }

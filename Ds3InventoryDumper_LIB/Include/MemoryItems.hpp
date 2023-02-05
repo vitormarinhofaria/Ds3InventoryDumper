@@ -11,7 +11,7 @@ struct InventoryHeader {
 };
 struct Item {
 	uint32_t gid = 0;
-	std::string name = "";
+	char name[60] = "N/A\0";
 	float defense = 0.0f;
 	float weight = 0.0f;
 };
@@ -29,6 +29,8 @@ const std::map<uint32_t, Item>& GetItemsDB();
 std::string SaveAsJson(const std::vector<Item>& items);
 
 const size_t HEADER_SEARCH = 0x7FF440102288;
+constexpr size_t InventorySize = 1920;
+size_t DefaultInventorySize();
 
 InventoryHeader ScanBasic(char* buffer, intptr_t bytesRead, bool* valid, size_t baseAddrs);
 InventoryHeader ScanEx(HANDLE hProc);

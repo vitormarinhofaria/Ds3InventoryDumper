@@ -3,11 +3,46 @@
 
 #include "MemoryItems.hpp"
 
-PyObject* ItemToPyDict(const Item& item)
+struct InitPythonData {
+	std::string module_path;
+	Item* head = nullptr;
+	Item* chest = nullptr;
+	Item* gloves = nullptr;
+	Item* legs = nullptr;
+	std::vector<Item>* head_vec = nullptr;
+	std::vector<Item>* chest_vec = nullptr;
+	std::vector<Item>* gloves_vec = nullptr;
+	std::vector<Item>* legs_vec = nullptr;
+};
+
+struct PyData {
+	PyObject* m_module = nullptr;
+	PyObject* m_calc_function = nullptr;
+
+	Item* e_head = nullptr;
+	Item* e_chest = nullptr;
+	Item* e_gloves = nullptr;
+	Item* e_legs = nullptr;
+	std::vector<Item>* e_head_vec = nullptr;
+	std::vector<Item>* e_chest_vec = nullptr;
+	std::vector<Item>* e_gloves_vec = nullptr;
+	std::vector<Item>* e_legs_vec = nullptr;
+
+	void InitPython(InitPythonData init);
+	void Update();
+private:
+	PyObject* m_heads_list, *m_chest_list, *m_gloves_list, *m_legs_list = nullptr;
+	void LoadModule();
+	void CallPyFunction(PyObject* head, PyObject* chest, PyObject* hands, PyObject* legs);
+};
+static std::shared_mutex g_writing;
+static std::atomic_bool g_should_reload = false;
+
+static PyObject* ItemToPyDict(const Item& item)
 {
 	PyObject* dict = PyDict_New();
-	
-	PyObject* name = PyUnicode_FromString(item.name.c_str());
+
+	PyObject* name = PyUnicode_FromString(item.name);
 	PyDict_SetItemString(dict, "name", name);
 	Py_DECREF(name);
 
@@ -22,18 +57,28 @@ PyObject* ItemToPyDict(const Item& item)
 	return dict;
 }
 
-Item ItemFromPyDict(PyObject* pItem)
+static Item ItemFromPyDict(PyObject* pItem)
 {
 	auto pName = PyDict_GetItemString(pItem, "name");
 	auto pDefense = PyDict_GetItemString(pItem, "defense");
 	auto pWeight = PyDict_GetItemString(pItem, "weight");
-	
+
 	std::string name = PyUnicode_AsUTF8(pName);
-	float defense = PyFloat_AsDouble(pDefense);
-	float weight = PyFloat_AsDouble(pWeight);
+	float defense = static_cast<float>(PyFloat_AsDouble(pDefense));
+	float weight = static_cast<float>(PyFloat_AsDouble(pWeight));
 
 	Py_DECREF(pItem);
 
-	Item item = { 0, name, defense, weight };
+	Item item = { .gid = 0, .defense = defense, .weight = weight };
+	strcpy_s(item.name, name.c_str());
 	return item;
+}
+
+static void SetShouldReloadPython(bool val) {
+	g_should_reload.store(val);
+}
+
+
+static std::shared_mutex& get_py_mutex() {
+	return g_writing;
 }

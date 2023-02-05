@@ -16,6 +16,8 @@
 #include <string>
 #include <filesystem>
 #include <fstream>
+#include <thread>
+#include <shared_mutex>
 
 #include <d3d11.h>
 
