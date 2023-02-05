@@ -44,7 +44,7 @@ const void GetPresent()
 	WNDCLASSEXA wc = { sizeof(WNDCLASSEX), CS_CLASSDC, DXGIMsgProc, 0, 0, GetModuleHandleA(NULL), nullptr, nullptr, nullptr, nullptr, "DX", nullptr };
 	RegisterClassExA(&wc);
 	HWND hwnd = CreateWindowA("DX", nullptr, WS_OVERLAPPEDWINDOW, 100, 100, 300, 300, nullptr, nullptr, wc.hInstance, nullptr);
-
+	
 	DXGI_SWAP_CHAIN_DESC sd = { 0 };
 	sd.BufferCount = 1;
 	sd.BufferDesc.Width = 2;
@@ -108,7 +108,27 @@ HRESULT GetDeviceAndCtxFromSwapchain(IDXGISwapChain* pSwapChain, ID3D11Device** 
 	return ret;
 }
 
+void CheckImGuiConfig() {
+	if (!std::filesystem::exists("imgui.ini")) {
+		std::string imgui_ini = R"ini([Window][Debug##Default]
+			Pos = 60, 60
+			Size = 400, 400
+			Collapsed = 0
+
+			[Window][Ds3 Inventory Dumper]
+			Pos = 1283, 3
+			Size = 320, 145
+			Collapsed = 0)ini";
+		std::ofstream imgui_ini_file("imgui.ini");
+		imgui_ini_file << imgui_ini;
+		imgui_ini_file.flush();
+		imgui_ini_file.close();
+	}
+}
+
 static bool gShowMenu = false;
+void LoadPyModule(); //Foward declaration
+int hotKeyId = 857;
 LRESULT CALLBACK mWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 {
 	ImGuiIO& io = ImGui::GetIO();
@@ -125,11 +145,15 @@ LRESULT CALLBACK mWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 			gShowMenu = !gShowMenu;
 		}
 	}
+	if (msg == WM_HOTKEY) {
+		if (wparam == hotKeyId) {
+			LoadPyModule();
+		}
+	}
 
 	if (gShowMenu)
 	{
 		ImGui_ImplWin32_WndProcHandler(hwnd, msg, wparam, lparam);
-		return true;
 	}
 
 	return CallWindowProc(OriginalWindowProcHandler, hwnd, msg, wparam, lparam);
@@ -154,6 +178,7 @@ void LoadPyModule()
 	if (pModule != nullptr)
 	{
 		pFunc = PyObject_GetAttrString(pModule, "calcular");
+		std::cout << __FUNCTION__ << ":" << __LINE__ << " Loaded calcular from myds3code.py\n";
 	}
 }
 void CallPyFunction(PyObject* head, PyObject* chest, PyObject* hands, PyObject* legs)
@@ -175,10 +200,13 @@ bool presentInitialized = false;
 Item cHead, cChest, cHands, cLegs = {};
 PyObject* pHead, * pChest, * pHands, * pLegs = nullptr;
 
+std::string pythonCode;
+
 HRESULT __fastcall Present(IDXGISwapChain* swapChain, UINT SyncInterval, UINT Flags)
 {
 	if (!presentInitialized)
 	{
+		std::cout << __FUNCTION__ << ":" << __LINE__ << " Initializing present method\n";
 		GetDeviceAndCtxFromSwapchain(swapChain, &pDevice, &pContext);
 		pSwapChain = swapChain;
 		DXGI_SWAP_CHAIN_DESC sd;
@@ -186,7 +214,6 @@ HRESULT __fastcall Present(IDXGISwapChain* swapChain, UINT SyncInterval, UINT Fl
 
 		ImGui::CreateContext();
 		ImGuiIO& io = ImGui::GetIO();
-		io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 		window = sd.OutputWindow;
 
 		OriginalWindowProcHandler = (WNDPROC)SetWindowLongPtr(window, GWLP_WNDPROC, (LONG_PTR)mWndProc);
@@ -201,34 +228,54 @@ HRESULT __fastcall Present(IDXGISwapChain* swapChain, UINT SyncInterval, UINT Fl
 		{
 			pDevice->CreateRenderTargetView(backBuffer, nullptr, &pRenderTargetView);
 			backBuffer->Release();
+			std::cout << __FUNCTION__ << ":" << __LINE__ << " pRenderTargetView: " << std::hex << pRenderTargetView << std::dec << "\n";
 		}
 		presentInitialized = true;
+		std::cout << __FUNCTION__ << ":" << __LINE__ << " pSwapChain: " << std::hex << pSwapChain << " window: " << window << "\n" << std::dec;
+
+		PyPreConfig preConfig{};
+		PyPreConfig_InitPythonConfig(&preConfig);
+		Py_PreInitialize(&preConfig);
 
 		PyConfig pyConfig{};
 		PyConfig_InitPythonConfig(&pyConfig);
+
 		std::string pythonHome = ModPath.string() + "/python3";
 		wchar_t wPyHome[MAX_PATH] = { 0 };
 		MultiByteToWideChar(CP_UTF8, MB_PRECOMPOSED, pythonHome.c_str(), pythonHome.size(), wPyHome, sizeof(wPyHome));
 		pyConfig.home = wPyHome;
+		PyWideStringList_Append(&pyConfig.module_search_paths, wPyHome);
+
 		wchar_t wModulePath[MAX_PATH] = { 0 };
 		MultiByteToWideChar(CP_UTF8, MB_PRECOMPOSED, ModPath.string().c_str(), ModPath.string().size(), wModulePath, sizeof(wModulePath));
 		PyWideStringList_Append(&pyConfig.module_search_paths, wModulePath);
+
+		std::wstring wLibsPath = std::wstring(wPyHome) + L"/Lib";
+		PyWideStringList_Append(&pyConfig.module_search_paths, wLibsPath.data());
+		pyConfig.module_search_paths_set = 1;
+
+		pyConfig.optimization_level = 2;
 
 		auto status = Py_InitializeFromConfig(&pyConfig);
 		if (PyStatus_IsError(status)) {
 			std::cout << status.err_msg << '\n';
 		}
+		else {
+			std::cout << __FUNCTION__ << ":" << __LINE__ << " Python Initialized\n";
+		}
 		LoadPyModule();
+		RegisterHotKey(window, hotKeyId, MOD_SHIFT | MOD_CONTROL | MOD_NOREPEAT, VK_F11);
 	}
 
 	ImGui_ImplWin32_NewFrame();
 	ImGui_ImplDX11_NewFrame();
 	ImGui::NewFrame();
-
 	//use imgui here
 	if (gShowMenu)
 	{
 		ImGui::Begin("Ds3 Inventory Dumper");
+		std::wstring s = L"FPS: " + std::to_wstring(ImGui::GetIO().Framerate);
+		SetConsoleTitleW(s.c_str());
 
 		std::vector<Item> head;
 		PyObject* p_Head = PyList_New(0);
@@ -248,9 +295,6 @@ HRESULT __fastcall Present(IDXGISwapChain* swapChain, UINT SyncInterval, UINT Fl
 		for (auto i = 0; i < header.size; i++)
 		{
 			bool isInDB = GetItemsDB().contains(memItems[i].gid);
-			if (memItems[i].gid == 287935456) {
-				std::cout << "Found 287.935.456 in db\n";
-			}
 			if (isInDB)
 			{
 				Item item = GetItemsDB().at(memItems[i].gid);
@@ -289,12 +333,12 @@ HRESULT __fastcall Present(IDXGISwapChain* swapChain, UINT SyncInterval, UINT Fl
 				}
 			}
 		}
-		std::cout << "Size of all items: " << allItems.size() << "\n";
-		std::cout << "Size of head: " << head.size() << "\n";
-		std::cout << "Size of armor: " << armor.size() << "\n";
-		std::cout << "Size of gloves: " << gloves.size() << "\n";
-		std::cout << "Size of pants: " << pants.size() << "\n";
+
 		CallPyFunction(p_Head, p_Chest, p_Hands, p_Legs);
+		Py_DECREF(p_Head);
+		Py_DECREF(p_Chest);
+		Py_DECREF(p_Hands);
+		Py_DECREF(p_Legs);
 		if (!head.empty()) {
 			pHead = PyTuple_GetItem(pValue, 0);
 			cHead = ItemFromPyDict(pHead);
@@ -320,10 +364,8 @@ HRESULT __fastcall Present(IDXGISwapChain* swapChain, UINT SyncInterval, UINT Fl
 			Py_DECREF(pValue);
 		}
 
-		if (ImGui::Button("Reload Python Script"))
-		{
-			LoadPyModule();
-		}
+		ImGui::Text("Press CTRL+SHIFT+F11 to reload the Python script");
+
 		ImGui::Text("Size of allItems %d", allItems.size());
 
 		if (!cHead.name.empty())
@@ -348,7 +390,7 @@ HRESULT __fastcall Present(IDXGISwapChain* swapChain, UINT SyncInterval, UINT Fl
 
 		ImGui::End();
 	}
-	//
+
 	ImGui::EndFrame();
 	ImGui::Render();
 	pContext->OMSetRenderTargets(1, &pRenderTargetView, nullptr);
@@ -368,7 +410,7 @@ void DetourDirectXPresent()
 int WINAPI main()
 {
 	SetupConsole();
-
+	CheckImGuiConfig();
 	std::cout << "...\n";
 
 	char file_name[256];
@@ -395,6 +437,7 @@ int WINAPI main()
 		Sleep(500);
 	}
 	std::cout << "Finished hooking DirectX\n";
+	std::cout << "You can now go back to the game and press 'Insert' to toogle the overlay\n";
 	Sleep(4000);
 	return 0;
 }
