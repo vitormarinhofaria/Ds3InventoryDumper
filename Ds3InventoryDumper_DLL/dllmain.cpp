@@ -199,6 +199,7 @@ bool presentInitialized = false;
 
 Item cHead, cChest, cHands, cLegs = {};
 PyObject* pHead, * pChest, * pHands, * pLegs = nullptr;
+std::vector<Item> head, chest, hands, legs;
 
 std::string pythonCode;
 
@@ -277,16 +278,16 @@ HRESULT __fastcall Present(IDXGISwapChain* swapChain, UINT SyncInterval, UINT Fl
 		std::wstring s = L"FPS: " + std::to_wstring(ImGui::GetIO().Framerate);
 		SetConsoleTitleW(s.c_str());
 
-		std::vector<Item> head;
+		head.clear();
 		PyObject* p_Head = PyList_New(0);
 
-		std::vector<Item> armor;
+		chest.clear();
 		PyObject* p_Chest = PyList_New(0);
 
-		std::vector<Item> gloves;
+		hands.clear();
 		PyObject* p_Hands = PyList_New(0);
 
-		std::vector<Item> pants;
+		legs.clear();
 		PyObject* p_Legs = PyList_New(0);
 
 		std::vector<Item> allItems;
@@ -312,21 +313,21 @@ HRESULT __fastcall Present(IDXGISwapChain* swapChain, UINT SyncInterval, UINT Fl
 				}
 				if (item.name.find("Armor") != std::string::npos || item.name.find("Robe") != std::string::npos)
 				{
-					armor.push_back(item);
+					chest.push_back(item);
 					auto pItem = ItemToPyDict(item);
 					PyList_Insert(p_Chest, 1, pItem);
 					Py_DECREF(pItem);
 				}
 				if (item.name.find("Gauntlet") != std::string::npos || item.name.find("Glove") != std::string::npos)
 				{
-					gloves.push_back(item);
+					hands.push_back(item);
 					auto pItem = ItemToPyDict(item);
 					PyList_Insert(p_Hands, 1, pItem);
 					Py_DECREF(pItem);
 				}
 				if (item.name.find("Trouser") != std::string::npos || item.name.find("Legging") != std::string::npos)
 				{
-					pants.push_back(item);
+					legs.push_back(item);
 					auto pItem = ItemToPyDict(item);
 					PyList_Insert(p_Legs, 1, pItem);
 					Py_DECREF(pItem);
@@ -344,17 +345,17 @@ HRESULT __fastcall Present(IDXGISwapChain* swapChain, UINT SyncInterval, UINT Fl
 			cHead = ItemFromPyDict(pHead);
 			Py_DECREF(pHead);
 		}
-		if (!armor.empty()) {
+		if (!chest.empty()) {
 			pChest = PyTuple_GetItem(pValue, 1);
 			cChest = ItemFromPyDict(pChest);
 			Py_DECREF(pChest);
 		}
-		if (!gloves.empty()) {
+		if (!hands.empty()) {
 			pHands = PyTuple_GetItem(pValue, 2);
 			cHands = ItemFromPyDict(pHands);
 			Py_DECREF(pHands);
 		}
-		if (!pants.empty()) {
+		if (!legs.empty()) {
 			pLegs = PyTuple_GetItem(pValue, 3);
 			cLegs = ItemFromPyDict(pLegs);
 			Py_DECREF(pLegs);
