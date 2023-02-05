@@ -102,7 +102,6 @@ InventoryHeader ScanBasic(char* buffer, intptr_t bytesRead, bool* valid, size_t 
 			return header;
 		}
 	}
-	std::cout << "\n";
 	return header;
 }
 InventoryHeader ScanEx(HANDLE hProc)
@@ -113,10 +112,9 @@ InventoryHeader ScanEx(HANDLE hProc)
 	DWORD oldprotect;
 	char* buffer{ nullptr };
 	MEMORY_BASIC_INFORMATION mbi{};
-	//mbi.RegionSize = sizeof(InventoryHeader);
 	char* begin = (char*)0x7FF3A0000000;
 	uint64_t size = 0x100000000000;
-	//mbi.Type
+
 	if (hProc == nullptr) {
 		VirtualQuery((LPCVOID)begin, &mbi, sizeof(MEMORY_BASIC_INFORMATION));
 	}
@@ -141,7 +139,6 @@ InventoryHeader ScanEx(HANDLE hProc)
 		if (hProc == nullptr) {
 			if (VirtualProtect(mbi.BaseAddress, mbi.RegionSize, PAGE_EXECUTE_READWRITE, &oldprotect))
 			{
-				//std::memcpy(buffer, mbi.BaseAddress, mbi.RegionSize);
 				header = ScanBasic((char*)mbi.BaseAddress, mbi.RegionSize, &valid, (size_t)mbi.BaseAddress);
 				VirtualProtect(mbi.BaseAddress, mbi.RegionSize, oldprotect, &oldprotect);
 			}
