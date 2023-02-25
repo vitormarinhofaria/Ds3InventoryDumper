@@ -1,0 +1,7 @@
+{
+    "cmake.configureSettings": {
+        "VCPKG_TARGET_TRIPLET": "x64-windows",
+        "CMAKE_TOOLCHAIN_FILE": "${env:VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+        "PYTHON_PATH":"C:/Users/vitor/scoop/apps/python310/current"
+    }
+}

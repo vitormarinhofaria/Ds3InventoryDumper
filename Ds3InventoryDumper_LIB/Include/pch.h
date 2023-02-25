@@ -7,26 +7,14 @@
 #ifndef PCH_H
 #define PCH_H
 
-// add headers that you want to pre-compile here
-#include "framework.h"
-
-#include <iostream>
 #include <cstdint>
-#include <vector>
+#include <map>
 #include <string>
-#include <filesystem>
 #include <fstream>
-#include <thread>
-#include <shared_mutex>
-#include <chrono>
+#include <sstream>
+#include <vector>
+#include <iostream>
 
-#include <d3d11.h>
-
-#include <detours/detours.h>
-
-#include <imgui.h>
-#include <imgui_impl_win32.h>
-#include <imgui_impl_dx11.h>
-#include <python3.10/Python.h>
+#include <windows.h>
 
 #endif //PCH_H

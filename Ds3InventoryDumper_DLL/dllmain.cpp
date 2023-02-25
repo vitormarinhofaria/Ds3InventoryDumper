@@ -129,6 +129,7 @@ void CheckImGuiConfig() {
 
 static bool gShowMenu = false;
 int hotKeyId = 857;
+std::atomic_bool* python_should_reload;
 LRESULT CALLBACK mWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 {
 	ImGuiIO& io = ImGui::GetIO();
@@ -147,7 +148,7 @@ LRESULT CALLBACK mWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 	}
 	if (msg == WM_HOTKEY) {
 		if (wparam == hotKeyId) {
-			SetShouldReloadPython(true);
+			python_should_reload->store(true);
 		}
 	}
 
@@ -163,6 +164,7 @@ HMODULE thisModule;
 bool presentInitialized = false;
 Item cHead, cChest, cHands, cLegs = { .gid = 0, .name = "N/A", .defense = 0, .weight = 0 };
 std::vector<Item>* head, * chest, * hands, * legs = nullptr;
+int* head_size, * chest_size, * hands_size, * legs_size = nullptr;
 PyData g_Python;
 
 HRESULT __fastcall Present(IDXGISwapChain* swapChain, UINT SyncInterval, UINT Flags)
@@ -195,11 +197,15 @@ HRESULT __fastcall Present(IDXGISwapChain* swapChain, UINT SyncInterval, UINT Fl
 		}
 		presentInitialized = true;
 		std::cout << __FUNCTION__ << ":" << __LINE__ << " pSwapChain: " << std::hex << pSwapChain << " window: " << window << "\n" << std::dec;
-		
+
 		head = new std::vector<Item>();
+		head->reserve(200);
 		chest = new std::vector<Item>();
+		chest->reserve(200);
 		hands = new std::vector<Item>();
+		hands->reserve(200);
 		legs = new std::vector<Item>();
+		legs->reserve(200);
 
 		InitPythonData initData{};
 		initData.head = &cHead;
@@ -212,18 +218,58 @@ HRESULT __fastcall Present(IDXGISwapChain* swapChain, UINT SyncInterval, UINT Fl
 		initData.legs_vec = legs;
 		initData.module_path = ModPath.string();
 
-		g_Python.InitPython(initData);
-		/*g_python_thread = std::thread(
+		g_python_thread = std::thread(
 			[initData]() {
 				using namespace std::chrono_literals;
 		std::this_thread::sleep_for(2s);
+		g_Python.InitPython(initData);
+		python_should_reload = &g_Python.m_should_reload;
 		while (true) {
-			TickPython();
-			std::this_thread::sleep_for(200ms);
+			//g_Python.Update();
+			g_Python.UpdateNative();
+			std::this_thread::sleep_for(1s);
 		}
-			});*/
+			});
 
-		RegisterHotKey(window, hotKeyId, MOD_SHIFT | MOD_CONTROL | MOD_NOREPEAT, VK_F11);
+		RegisterHotKey(NULL, hotKeyId, MOD_SHIFT | MOD_CONTROL | MOD_NOREPEAT, VK_F11);
+	}
+
+	head->clear();
+	chest->clear();
+	hands->clear();
+	legs->clear();
+
+	std::vector<Item> allItems;
+
+	for (auto i = 0; i < header.size; i++)
+	{
+		bool isInDB = GetItemsDB().contains(memItems[i].gid);
+		if (isInDB)
+		{
+			Item item = GetItemsDB().at(memItems[i].gid);
+			allItems.push_back(item);
+			std::string item_name = item.name;
+
+			if (item_name.find("Helm") != std::string::npos ||
+				item_name.find("Hood") != std::string::npos ||
+				item_name.find("Veil") != std::string::npos ||
+				item_name.find("Hat") != std::string::npos)
+			{
+				head->push_back(item);
+			}
+			if (item_name.find("Armor") != std::string::npos || item_name.find("Robe") != std::string::npos)
+			{
+				chest->push_back(item);
+			}
+			if (item_name.find("Gauntlet") != std::string::npos || item_name.find("Glove") != std::string::npos)
+			{
+				hands->push_back(item);
+			}
+			if (item_name.find("Trouser") != std::string::npos || item_name.find("Legging") != std::string::npos)
+			{
+				legs->push_back(item);
+			}
+		}
 	}
 
 	ImGui_ImplWin32_NewFrame();
@@ -236,44 +282,8 @@ HRESULT __fastcall Present(IDXGISwapChain* swapChain, UINT SyncInterval, UINT Fl
 		std::wstring s = L"FPS: " + std::to_wstring(ImGui::GetIO().Framerate);
 		SetConsoleTitleW(s.c_str());
 
-		head->clear();
-		chest->clear();
-		hands->clear();
-		legs->clear();
 
-		std::vector<Item> allItems;
-
-		for (auto i = 0; i < header.size; i++)
-		{
-			bool isInDB = GetItemsDB().contains(memItems[i].gid);
-			if (isInDB)
-			{
-				Item item = GetItemsDB().at(memItems[i].gid);
-				allItems.push_back(item);
-				std::string item_name = item.name;
-
-				if (item_name.find("Helm") != std::string::npos ||
-					item_name.find("Hood") != std::string::npos ||
-					item_name.find("Veil") != std::string::npos ||
-					item_name.find("Hat") != std::string::npos)
-				{
-					head->push_back(item);
-				}
-				if (item_name.find("Armor") != std::string::npos || item_name.find("Robe") != std::string::npos)
-				{
-					chest->push_back(item);
-				}
-				if (item_name.find("Gauntlet") != std::string::npos || item_name.find("Glove") != std::string::npos)
-				{
-					hands->push_back(item);
-				}
-				if (item_name.find("Trouser") != std::string::npos || item_name.find("Legging") != std::string::npos)
-				{
-					legs->push_back(item);
-				}
-			}
-		}
-		g_Python.Update();
+		//g_Python.Update();
 		ImGui::Text("Press CTRL+SHIFT+F11 to reload the Python script");
 
 		ImGui::Text("Size of allItems %d", allItems.size());

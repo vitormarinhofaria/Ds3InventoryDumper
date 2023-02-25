@@ -11,7 +11,7 @@ void PyData::LoadModule()
 	{
 		PyObject* module_name = PyUnicode_FromString("myds3code");
 		m_module = PyImport_Import(module_name);
-		Py_DECREF(module_name);
+		Py_XDECREF(module_name);
 	}
 
 	if (m_module != nullptr)
@@ -31,23 +31,23 @@ void PyData::CallPyFunction(PyObject* head, PyObject* chest, PyObject* hands, Py
 	PyTuple_SetItem(pArgs, 3, legs);
 
 	PyObject* val = PyObject_CallObject(m_calc_function, pArgs);
-	Py_DECREF(pArgs);
+	Py_XDECREF(pArgs);
 
 	PyObject* pHead = PyTuple_GetItem(val, 0);
 	*e_head = ItemFromPyDict(pHead);
-	Py_DECREF(pHead);
+	Py_XDECREF(pHead);
 
 	PyObject* pChest = PyTuple_GetItem(val, 1);
 	*e_chest = ItemFromPyDict(pChest);
-	Py_DECREF(pChest);
+	Py_XDECREF(pChest);
 
 	PyObject* pHands = PyTuple_GetItem(val, 2);
 	*e_gloves = ItemFromPyDict(pHands);
-	Py_DECREF(pHands);
+	Py_XDECREF(pHands);
 
 	PyObject* pLegs = PyTuple_GetItem(val, 3);
 	*e_legs = ItemFromPyDict(pLegs);
-	Py_DECREF(pLegs);
+	Py_XDECREF(pLegs);
 }
 
 void PyData::InitPython(InitPythonData init)
@@ -98,43 +98,97 @@ void PyData::InitPython(InitPythonData init)
 	m_legs_list = PyList_New(0);
 }
 
+void PyData::UpdateNative() {
+	auto start = std::chrono::system_clock::now();
+	Item melhor_elmo = { .gid = 0, .name = "N/A", .defense = 1, .weight = 1 };
+	Item melhor_peitoral = { .gid = 0, .name = "N/A", .defense = 1, .weight = 1 };
+	Item melhor_luva = { .gid = 0, .name = "N/A", .defense = 1, .weight = 1 };
+	Item melhor_calca = { .gid = 0, .name = "N/A", .defense = 1, .weight = 1 };
+
+	float soma_def = 0.0f;
+	float soma_peso = 0.0f;
+	float capacidade = 60.0f;
+
+	for (size_t ie = 0; ie < e_head_vec->size(); ie++) {
+		Item elmo = (*e_head_vec)[ie];
+		for (size_t ip = 0; ip < e_chest_vec->size(); ip++) {
+			Item peitoral = (*e_chest_vec)[ip];
+			for (size_t ic = 0; ic < e_legs_vec->size(); ic++) {
+				Item calca = (*e_legs_vec)[ic];
+				for (size_t il = 0; il < e_gloves_vec->size(); il++) {
+					Item luva = (*e_gloves_vec)[il];
+					float new_soma_defesa = elmo.defense + peitoral.defense + calca.defense + luva.defense;
+					float peso = elmo.weight + peitoral.weight + calca.weight + luva.weight;
+					if (new_soma_defesa >= soma_def && peso <= capacidade) {
+						soma_def = new_soma_defesa;
+						soma_peso = peso;
+						melhor_elmo = elmo;
+						melhor_peitoral = peitoral;
+						melhor_calca = calca;
+						melhor_luva = luva;
+					}
+				}
+			}
+		}
+	}
+
+	*e_head = melhor_elmo;
+	*e_chest = melhor_peitoral;
+	*e_legs = melhor_calca;
+	*e_gloves = melhor_luva;
+	auto end = std::chrono::system_clock::now();
+	auto duration = end - start;
+	std::cout << "C version took: " << std::chrono::duration_cast<std::chrono::milliseconds>(duration).count() << "ms -- begin " << start << "end " << end << "\n";
+}
 
 void PyData::Update() {
-	if (g_should_reload.load()) {
+	if (m_should_reload.load()) {
 		LoadModule();
-		g_should_reload.store(false);
+		m_should_reload.store(false);
 	}
-	PyObject* heads_list = PyList_New(0);
+	PyObject* heads_list = PyList_New(e_head_vec->size());
 	for (size_t i = 0; i < e_head_vec->size(); i++) {
 		PyObject* item = ItemToPyDict((*e_head_vec)[i]);
-		PyList_Insert(heads_list, 1, item);
-		Py_DECREF(item);
+		if (PyList_SetItem(heads_list, i, item) == -1) {
+			std::cout << "Failed to append to list\n";
+			PyErr_Print();
+			std::cin.get();
+		}
 	}
 
-	PyObject* chest_list = PyList_New(0);
+	PyObject* chest_list = PyList_New(e_chest_vec->size());
 	for (size_t i = 0; i < e_chest_vec->size(); i++) {
 		PyObject* item = ItemToPyDict((*e_chest_vec)[i]);
-		PyList_Insert(chest_list, 1, item);
-		Py_DECREF(item);
+		if (PyList_SetItem(chest_list, i, item) == -1) {
+			std::cout << "Failed to append to list\n";
+			PyErr_Print();
+			std::cin.get();
+		}
 	}
 
-	PyObject* gloves_list = PyList_New(0);
+	PyObject* gloves_list = PyList_New(e_gloves_vec->size());
 	for (size_t i = 0; i < e_gloves_vec->size(); i++) {
 		PyObject* item = ItemToPyDict((*e_gloves_vec)[i]);
-		PyList_Insert(gloves_list, 1, item);
-		Py_DECREF(item);
+		if (PyList_SetItem(gloves_list, i, item) == -1) {
+			std::cout << "Failed to append to list\n";
+			PyErr_Print();
+			std::cin.get();
+		}
 	}
 
-	PyObject* legs_list = PyList_New(0);
+	PyObject* legs_list = PyList_New(e_legs_vec->size());
 	for (size_t i = 0; i < e_legs_vec->size(); i++) {
 		PyObject* item = ItemToPyDict((*e_legs_vec)[i]);
-		PyList_Insert(legs_list, 1, item);
-		Py_DECREF(item);
+		if (PyList_SetItem(legs_list, i, item) == -1) {
+			std::cout << "Failed to append to list\n";
+			PyErr_Print();
+			std::cin.get();
+		}
 	}
-	std::cout << "Calling python function\n";
 	CallPyFunction(heads_list, chest_list, gloves_list, legs_list);
-	Py_DECREF(heads_list);
-	Py_DECREF(chest_list);
-	Py_DECREF(gloves_list);
-	Py_DECREF(legs_list);
+	Py_XDECREF(heads_list);
+	Py_XDECREF(chest_list);
+	Py_XDECREF(gloves_list);
+	Py_XDECREF(legs_list);
+	//UpdateNative();
 }

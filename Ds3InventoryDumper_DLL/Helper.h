@@ -27,9 +27,11 @@ struct PyData {
 	std::vector<Item>* e_chest_vec = nullptr;
 	std::vector<Item>* e_gloves_vec = nullptr;
 	std::vector<Item>* e_legs_vec = nullptr;
+	std::atomic_bool m_should_reload = false;
 
 	void InitPython(InitPythonData init);
 	void Update();
+	void UpdateNative();
 private:
 	PyObject* m_heads_list, *m_chest_list, *m_gloves_list, *m_legs_list = nullptr;
 	void LoadModule();
